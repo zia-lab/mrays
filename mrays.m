@@ -29,16 +29,17 @@ RandomInSphere::usage = "RandomInSphere[sphereDensity, n, \"OutputAs\"-> {\"Cart
 sphereDensity is a function of angles \[Theta] and \[Phi], where \[Theta] is assumed to be the polar angle and \[Phi] the azimuth angle. sphereDensity does not need to be normalized. sphereDensity is interpreted in the sense that in a solid angle d\[CapitalOmega] = Sin[\[Theta]]d\[Theta] d\[Phi] the probability of having an event in that direction is sphereDensity[\[Theta],\[Phi]] d\[CapitalOmega].
 OutputAs is an option that can be used to control the format of the output, if set to \"Polar-Azimuth\" then the returned list consists of 2-element lists with the first element being a polar angle and the second one an azimuth angle. If OutputAs is set to \"Cartesian\" then the returned list consists of 3-element lists which correspond to {x,y,z} coordinates on the unit sphere.";
 
-Refractor2D::usage="Refractor2D[\[Sigma], \[Sigma]y, n1, n2, ys, {pz, py}, normalized] takes a curve \[Sigma][y] and its derivative \[Sigma]y[y], the abscissa ys that together with \[Sigma][ys] define a point on the surface \[Sigma][y], the refractive indices n1 and n2, and the origin of a ray {py,pz}. This function returns the refraction vector that describes the direction of refraction of a ray that originates in {py,pz} and encounters the surface at {ys,\[Sigma][ys]}.
-For the provided value for ys the function returns a list with four elements {pVec, oVec, reVector, True||False} where pVec is the vector from which the ray originates, oVec is the vector at the surface where refraction occurs, refVector is a unit vector pointing in the direction of refraction of the ray on the surface, the last element is False if there was total internal reflection and True otherwise.
+Refractor2D::usage="Refractor2D[\[Sigma], n1, n2] takes a curve \[Sigma][y] and the refractive indices n1 and n2. It returns a compiled function that takes three arguments {pz,py,ys}. Where {pz,py} define a point of origin for a point source, and ys is the abscissa of the curve where refraction occurs. This compiled function returns the refraction vector that describes the direction of refraction of a ray that originates in {py,pz} and encounters the surface at {ys,\[Sigma][ys]}.
+For the provided value for ys the function returns a list with four elements {pVec, oVec, reVector, {0|1, 0|1}} where pVec is the vector from which the ray originates, oVec is the vector at the surface where refraction occurs, refVector is a unit vector pointing in the direction of refraction of the ray on the surface, the last element is {0,0} if there was total internal reflection and {1,1} otherwise.
 If the angle of incidence is such that there is total internal refraction, then the function returns the direction vector of that reflection instead.
-This function makes not attempt at avoiding spurious intersections or more than one encounter of ray with the surface, and assumes that the medium with refractive index n1 is to the left of \[Sigma][y].
+This function makes not attempt at avoiding spurious intersections or more than one encounter of ray with the surface, and assumes that the medium with refractive index n1 is to the left of the curve \[Sigma][y].
 ";
 
-Refractor2DParametric::usage = "Refractor2DParametric[\[Sigma]z, \[Sigma]y, \[Sigma]z\[Theta], \[Sigma]y\[Theta], \[Theta], n1, n2, {pz, py}, normalize] takes the parametrization of a curve {\[Sigma]z[\[Theta]], \[Sigma]y[\[Theta]]} and its derivatives {\[Sigma]z\[Theta][\[Theta]], \[Sigma]y\[Theta][\[Theta]]}, the vector {pz, py} from which a ray originates, and the refractive indices n1 and n2. 
-For the provided value for \[Theta] (which defines a point in the curve) the function returns a list with four elements {pVec,oVec,reVector,True||False} where pVec is the vector from which the ray originates, oVec i the vector at the surface where refraction occurs, refVector is a unit vector pointing in the direction of refraction of the ray on the surface, the last element is False if there was total internal reflection and True otherwise.
+Refractor2DParametric::usage = "Refractor2DParametric[\[Sigma]z_, \[Sigma]y_, n1_, n2_] takes the parametrization of a curve {\[Sigma]z[\[Theta]], \[Sigma]y[\[Theta]]} and the refractive indices n1 and n2. 
+It returns a compiled function which given values for \[Theta] (which defines a point in the curve), pz, and py
+returns a list with four elements {pVec,oVec,reVector,{0|1,0|1}} where pVec is the vector from which the ray originates, oVec is the vector at the surface where refraction occurs, refVector is a unit vector pointing in the direction of refraction of the ray on the surface, the last element is {0,0} if there was total internal reflection and {1,1} otherwise.
 If the angle of incidence is such that there is total internal refraction, then the function returns the direction vector of that reflection instead.
-This function makes not attempt at avoiding spurious intersections or more than one encounter of ray with the surface, and assumes that the medium with refractive index n1 is to the left of \[Sigma][y].
+This function makes not attempt at avoiding spurious intersections or more than one encounter of ray with the surface, and assumes that the medium with refractive index n1 corresponds to a volume surrounded by a second homogeneous medium with refractive index n2.
 ";
 
 Refractor3D::usage = "Refractor3D[\[Sigma], \[Sigma]x, \[Sigma]y, n1, n2, {xs, ys}, {px, py, pz}, normalize] takes a surface \[Sigma][x, y], its partial derivatives \[Sigma]x[x, y] and \[Sigma]y[x, y], the coordinates {xs, ys}  of a point in the surface, the refractive indices n1 and n2, and the ray origin of a ray {px,py,pz}.
@@ -64,6 +65,7 @@ tmax is an estimate the dimension of a line with origin {x0, y0, z0} that should
 
 RayCollider3D::usage = "RayCollider3D[surfaceFun, {x0, y0, z0}, n, {{xmin,xmax},{ymin,ymax}}, stepResolution, dzTol] calculates the intersection of n rays with origin {x0, y0, z0} that would intersect with the surface described by the function surfaceFun. {{xmin, xmax}, {ymin, ymax}} describes the extension the domain in the x-y plane. stepResolution is the number of steps taken in the implementation of FindFirstRoot and dzTol is the minimum discrepance in the intersections that is considered acceptable.";
 
+Begin["`Private`"]
 
 VecNorm[vec_] := (Sqrt[Total[vec^2]])
 VecNormalize[vec_] := Simplify[(vec/VecNorm[vec])]
@@ -79,81 +81,136 @@ LabeledArrow[origin_, dest_, label_] := (
   {arrow, text}
   )
 
-Refractor2D[\[Sigma]_, \[Sigma]y_, n1_, n2_, ys_, {pz_, py_}, normalized_:False]:=(
-  (* evaluate partial derivatives and other common factors *)
-  {\[Sigma]yv, \[Sigma]v} = {\[Sigma]y[ys], \[Sigma][ys]};
-  combo3    = (-pz+\[Sigma]v+py \[Sigma]yv-ys \[Sigma]yv); 
-  (* this can be used to determine the condition for total internal reflection *)
-  radicand = n2^2 - n1^2 (1.-combo3^2/(((py-ys)^2+(pz-\[Sigma]v)^2) (1+\[Sigma]yv^2)));
-  pVec = {pz,py};
-  oVec = {\[Sigma]v, ys};
-  If[radicand<0.,
-  ((* total internal reflection *)
-    If[normalized,
-      (factor = 1./(Sqrt[(py-ys)^2+(pz-\[Sigma]v)^2] (1.+\[Sigma]yv^2));
-      reflectionVec = factor*{
-        pz-2. py \[Sigma]yv+2. ys \[Sigma]yv-pz \[Sigma]yv^2+\[Sigma]v (-1.+\[Sigma]yv^2),
-        -py+ys-2. (pz-\[Sigma]v) \[Sigma]yv+(py-ys) \[Sigma]yv^2
-        };
-      Return[{pVec, oVec, reflectionVec, False}];
-      ),
-      (reflectionVec = {
-        pz-2. py \[Sigma]yv+2. ys \[Sigma]yv-pz \[Sigma]yv^2+\[Sigma]v (-1.+\[Sigma]yv^2),
-        -py+ys-2. (pz-\[Sigma]v) \[Sigma]yv+(py-ys) \[Sigma]yv^2
-        };
-      Return[{pVec, oVec, reflectionVec, False}];
-      )
-    ]
-  ),
-  ((* refraction *)
-    oneplusq = 1.+\[Sigma]yv^2;
-    chunk1   = 1./n2*Sqrt[radicand/oneplusq];
-    inormie  = 1./(Sqrt[(py-ys)^2+(pz-\[Sigma]v)^2] * oneplusq);
-    nr = n1/n2;
-    refractionVector={
-      -nr( \[Sigma]yv (py-ys+(pz-\[Sigma]v) \[Sigma]yv))*inormie+chunk1,
-      nr(-py+ys+(-pz+\[Sigma]v) \[Sigma]yv)*inormie-\[Sigma]yv chunk1
-      };
-    If[normalized,
-      refractionVector = VecNormalize[refractionVector]];
-    Return[{pVec, oVec, refractionVector, True}];
-  )
-  ]
-);
-
-Refractor2DParametric[\[Sigma]z_, \[Sigma]y_, \[Sigma]z\[Theta]_, \[Sigma]y\[Theta]_, \[Theta]_, n1_, n2_, {pz_,py_}, normalize_:False]:= ( \
-  (* evaluate partial derivatives and other common factors *)
-  {\[Sigma]zv, \[Sigma]yv, \[Sigma]z\[Theta]v, \[Sigma]y\[Theta]v} = {\[Sigma]z[\[Theta]], \[Sigma]y[\[Theta]], \[Sigma]z\[Theta][\[Theta]], \[Sigma]y\[Theta][\[Theta]]};
-  (* This function value can be used to determine the condition for total internal reflection *)
-  radicand = n2^2-n1^2 (1-(pz \[Sigma]y\[Theta]v-\[Sigma]y\[Theta]v \[Sigma]zv+(-py+\[Sigma]yv) \[Sigma]z\[Theta]v)^2/(((py-\[Sigma]yv)^2+(pz-\[Sigma]zv)^2) (\[Sigma]y\[Theta]v^2+\[Sigma]z\[Theta]v^2)));
-  pVec = {pz, py};
-  oVec = {\[Sigma]zv, \[Sigma]yv};
-
-  If[radicand<0.,
-    ((* total internal reflection *) \
-    If[normalize, (
-      factor = 1./(Sqrt[(py-\[Sigma]yv)^2+(pz-\[Sigma]zv)^2] (\[Sigma]y\[Theta]v^2+\[Sigma]z\[Theta]v^2));
-      reflectionVec = factor*{-\[Sigma]y\[Theta]v^2 \[Sigma]zv+2 (-py+\[Sigma]yv) \[Sigma]y\[Theta]v \[Sigma]z\[Theta]v+\[Sigma]zv \[Sigma]z\[Theta]v^2+pz (\[Sigma]y\[Theta]v^2-\[Sigma]z\[Theta]v^2),2 \[Sigma]y\[Theta]v (-pz+\[Sigma]zv) \[Sigma]z\[Theta]v-py (\[Sigma]y\[Theta]v^2-\[Sigma]z\[Theta]v^2)+\[Sigma]yv (\[Sigma]y\[Theta]v^2-\[Sigma]z\[Theta]v^2)};
-      Return[{pVec, oVec, reflectionVec, False}];
-      ),
+Refractor2D[\[Sigma]_, n1_, n2_] :=
+  (
+   nr = N[n1/n2];
+   \[Sigma]y[y_] := Evaluate[D[\[Sigma][y], y]];
+   cfun = Compile[{
+      {pz, _Real},
+      {py, _Real},
+      {ys, _Real}
+      },
+     Module[{\[Sigma]yv, \[Sigma]v, combo3,
+       radicand, pVec, oVec,
+       reflectionVec, refractionVec,
+       oneplusq, chunk1, inormie, val},
       (
-      reflectionVec = {
-        -\[Sigma]y\[Theta]v^2 \[Sigma]zv+2 (-py+\[Sigma]yv) \[Sigma]y\[Theta]v \[Sigma]z\[Theta]v+\[Sigma]zv \[Sigma]z\[Theta]v^2+pz (\[Sigma]y\[Theta]v^2-\[Sigma]z\[Theta]v^2),
-        2 \[Sigma]y\[Theta]v (-pz+\[Sigma]zv) \[Sigma]z\[Theta]v-py (\[Sigma]y\[Theta]v^2-\[Sigma]z\[Theta]v^2)+\[Sigma]yv (\[Sigma]y\[Theta]v^2-\[Sigma]z\[Theta]v^2)
-        };
-      Return[{pVec, oVec, reflectionVec, False}];
-      )
-    ];
-    ),
-    ((* refraction *)
-      root   = 1./n2*Sqrt[radicand/(\[Sigma]y\[Theta]v^2+\[Sigma]z\[Theta]v^2)];
-      factor = n1/n2 1./(Sqrt[(py-\[Sigma]yv)^2+(pz-\[Sigma]zv)^2] (\[Sigma]y\[Theta]v^2+\[Sigma]z\[Theta]v^2));
-      refractionVector = {-((n1 \[Sigma]z\[Theta]v (py \[Sigma]y\[Theta]v-\[Sigma]yv \[Sigma]y\[Theta]v+(pz-\[Sigma]zv) \[Sigma]z\[Theta]v))/(n2 \[Kappa]^2 Sqrt[(py-\[Sigma]yv)^2+(pz-\[Sigma]zv)^2] (\[Sigma]y\[Theta]v^2+\[Sigma]z\[Theta]v^2)))+(\[Kappa] \[Sigma]y\[Theta]v  root)/Sqrt[\[Sigma]y\[Theta]v^2+\[Sigma]z\[Theta]v^2],
-      -((n1 \[Sigma]y\[Theta]v (py \[Sigma]y\[Theta]v-\[Sigma]yv \[Sigma]y\[Theta]v+(pz-\[Sigma]zv) \[Sigma]z\[Theta]v))/(n2 \[Kappa]^2 Sqrt[(py-\[Sigma]yv)^2+(pz-\[Sigma]zv)^2] (\[Sigma]y\[Theta]v^2+\[Sigma]z\[Theta]v^2)))-(\[Kappa] \[Sigma]z\[Theta]v  root)/Sqrt[\[Sigma]y\[Theta]v^2+\[Sigma]z\[Theta]v^2]};
-      Return[{pVec, oVec, refractionVector, True}];
-    )
-  ]
-);
+       ((*evaluate partial derivatives and other common factors*)
+        \[Sigma]yv = \[Sigma]y[ys];
+        \[Sigma]v = \[Sigma][ys];
+        combo3 = (-pz
+           + \[Sigma]v
+           + py \[Sigma]yv
+           - ys \[Sigma]yv);
+        (*this can be used to determine the condition for total internal reflection*)
+        radicand = (
+          n2^2
+           - n1^2 *(1.
+              - combo3^2/(
+                ((py - ys)^2
+                   + (pz - \[Sigma]v)^2
+                  ) 
+                 *(1 + \[Sigma]yv^2)
+                )
+             )
+          );
+        pVec = {pz, py};
+        oVec = {\[Sigma]v, ys};
+        val = If[radicand < 0.,
+          (
+           (*total internal reflection*)
+           reflectionVec = {
+             (pz - 2. py \[Sigma]yv
+               + 2. ys \[Sigma]yv
+               - pz \[Sigma]yv^2
+               + \[Sigma]v* (-1. + \[Sigma]yv^2)
+              ),
+             (-py
+               + ys
+               - 2. (pz - \[Sigma]v) \[Sigma]yv
+               + (py - ys) \[Sigma]yv^2
+              )
+             };
+           {pVec, oVec, reflectionVec, {0., 0.}}
+           )
+          ,
+          ((*refraction*)
+           oneplusq = (1. + \[Sigma]yv^2);
+           chunk1 = (1./n2*Sqrt[radicand/oneplusq]);
+           
+           inormie = (1./(Sqrt[(py - ys)^2 + (pz - \[Sigma]v)^2]*
+                oneplusq));
+           refractionVec = {
+             
+             chunk1 - 
+              nr*inormie*(\[Sigma]yv (py - 
+                   ys + (pz - \[Sigma]v) \[Sigma]yv)), 
+             nr*inormie*(-py + 
+                 ys + (-pz + \[Sigma]v) \[Sigma]yv) - \[Sigma]yv *
+               chunk1
+             };
+           {pVec, oVec, refractionVec, {1., 1.}}
+           )
+          ];
+        val
+        )
+       )
+      ],
+     "CompilationTarget" -> "C",
+     "RuntimeAttributes" -> {Listable}
+     ];
+   Return[cfun]
+   );
+
+Refractor2DParametric[\[Sigma]z_, \[Sigma]y_, n1_, 
+   n2_] := ((*evaluate partial derivatives and other common factors*)
+   nr = n1/n2;
+   \[Sigma]z\[Theta][\[Beta]_] := 
+    Evaluate[D[\[Sigma]z[\[Beta]], \[Beta]]];
+   \[Sigma]y\[Theta][\[Beta]_] := 
+    Evaluate[D[\[Sigma]y[\[Beta]], \[Beta]]];
+   \[Kappa] = -1;(*fixes direction of normal*)
+   cfun := Compile[{{pz, _Real}, {py, _Real}, {\[Theta], _Real}}, 
+     Module[{\[Sigma]zv, \[Sigma]yv, \[Sigma]z\[Theta]v, 
+             \[Sigma]y\[Theta]v, radicand, pVec, oVec, 
+             factor, resultVecx, resultVecy, root,
+            val},
+      (
+       \[Sigma]zv = \[Sigma]z[\[Theta]];
+       \[Sigma]yv = \[Sigma]y[\[Theta]];
+       \[Sigma]z\[Theta]v = \[Sigma]z\[Theta][\[Theta]];
+       \[Sigma]y\[Theta]v = \[Sigma]y\[Theta][\[Theta]];
+       (*This function value can be used to determine the condition for total internal reflection*)
+       radicand = (n2^2 - 
+          n1^2*(1. - (pz \[Sigma]y\[Theta]v - \[Sigma]y\[Theta]v \[Sigma]zv + (-py + \[Sigma]yv) \[Sigma]z\[Theta]v)^2/(((py - \[Sigma]yv)^2 + (pz - \[Sigma]zv)^2)*(\[Sigma]y\[Theta]v^2 + \[Sigma]z\[Theta]v^2))));
+       pVec = {pz, py};
+       oVec = {\[Sigma]zv, \[Sigma]yv};
+       val = If[radicand < 0., (
+          (*total internal reflection*)
+          resultVecx = -\[Sigma]y\[Theta]v^2 \[Sigma]zv + 
+            2 (-py + \[Sigma]yv) \[Sigma]y\[Theta]v \[Sigma]z\[Theta]v + \[Sigma]zv \[Sigma]z\[Theta]v^2 + 
+            pz (\[Sigma]y\[Theta]v^2 - \[Sigma]z\[Theta]v^2);
+          
+          resultVecy = 
+           2 \[Sigma]y\[Theta]v (-pz + \[Sigma]zv) \[Sigma]z\[Theta]v - py (\[Sigma]y\[Theta]v^2 - \[Sigma]z\[Theta]v^2) + \[Sigma]yv (\[Sigma]y\[Theta]v^2 - \[Sigma]z\[Theta]v^2);
+          {pVec, oVec, {resultVecx, resultVecy}, {0, 0}}), (
+          (*refraction*)
+          root = Sqrt[
+             radicand/(\[Sigma]y\[Theta]v^2 + \[Sigma]z\[Theta]v^2)]/
+            n2;
+          factor = 
+           nr/(Sqrt[(py - \[Sigma]yv)^2 + (pz - \[Sigma]zv)^2] (\[Sigma]y\[Theta]v^2 + \[Sigma]z\[Theta]v^2));
+
+          resultVecx = -((n1 \[Sigma]z\[Theta]v (py \[Sigma]y\[Theta]v - \[Sigma]yv \[Sigma]y\[Theta]v + (pz - \[Sigma]zv) \[Sigma]z\[Theta]v)) / (n2 \[Kappa]^2 Sqrt[(py - \[Sigma]yv)^2 + (pz - \[Sigma]zv)^2] (\[Sigma]y\[Theta]v^2 + \[Sigma]z\[Theta]v^2))) + (\[Kappa] \[Sigma]y\[Theta]v root) / Sqrt[\[Sigma]y\[Theta]v^2 + \[Sigma]z\[Theta]v^2];
+
+          resultVecy = -((n1 \[Sigma]y\[Theta]v (py \[Sigma]y\[Theta]v - \[Sigma]yv \[Sigma]y\[Theta]v + (pz - \[Sigma]zv) \[Sigma]z\[Theta]v))/(n2 \[Kappa]^2 Sqrt[(py - \[Sigma]yv)^2 + (pz - \[Sigma]zv)^2] (\[Sigma]y\[Theta]v^2 + \[Sigma]z\[Theta]v^2))) - (\[Kappa] \[Sigma]z\[Theta]v root) / Sqrt[\[Sigma]y\[Theta]v^2 + \[Sigma]z\[Theta]v^2];
+          {pVec, oVec, {resultVecx, resultVecy}, {1, 1}})];
+       val)], 
+     "CompilationTarget" -> "C", 
+     "RuntimeAttributes" -> {Listable}
+     ];
+   Return[cfun]
+   );
 
 Refractor3D[\[Sigma]_, \[Sigma]x_, \[Sigma]y_, n1_, n2_, {xs_, ys_}, {px_, py_, pz_}, normalize_:False]:=(
   (*evaluate partial derivatives and other common factors*)
@@ -415,5 +472,7 @@ Refractor2DPol[\[Sigma]_, \[Sigma]y_, n1_, n2_, ys_, {pz_, py_}, \[Beta]pol_] :=
   )
   ]
 )
+
+End[];
 
 EndPackage[]
